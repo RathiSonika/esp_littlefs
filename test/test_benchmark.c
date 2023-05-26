@@ -27,11 +27,11 @@ wl_handle_t s_wl_handle = WL_INVALID_HANDLE;
 static void setup_spiffs(){
     ESP_LOGI(TAG, "Initializing SPIFFS");
 
-    esp_spiffs_format("spiffs_store");
+    esp_spiffs_format("flash_test");
 
     esp_vfs_spiffs_conf_t conf = {
       .base_path = "/spiffs",
-      .partition_label = "spiffs_store",
+      .partition_label = "flash_test",
       .max_files = MAX_FILES,
       .format_if_mount_failed = true
     };
@@ -57,7 +57,7 @@ static void setup_fat(){
             .format_if_mount_failed = true,
             .allocation_unit_size = CONFIG_WL_SECTOR_SIZE
     };
-    esp_err_t err = esp_vfs_fat_spiflash_mount("/fat", "fat_store", &conf, &s_wl_handle);
+    esp_err_t err = esp_vfs_fat_spiflash_mount("/fat", "flash_test", &conf, &s_wl_handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to mount FATFS (%s)", esp_err_to_name(err));
         TEST_FAIL();
@@ -75,17 +75,10 @@ static void setup_littlefs() {
     esp_littlefs_format("flash_test");
 }
 
-static void test_setup() {
-    setup_fat();
-    setup_spiffs();
-    setup_littlefs();
-    printf("Test setup complete.\n");
-}
-
 static void test_teardown()
 {
     assert(ESP_OK == esp_vfs_fat_spiflash_unmount("/fat", s_wl_handle));
-    TEST_ESP_OK(esp_vfs_spiffs_unregister("spiffs_store"));
+    TEST_ESP_OK(esp_vfs_spiffs_unregister("flash_test"));
     TEST_ESP_OK(esp_vfs_littlefs_unregister("flash_test"));
     printf("Test teardown complete.\n");
 }
@@ -107,21 +100,7 @@ static void fill_partitions()
         'D','U','M','M','Y','D','A','T','A','0','1','2', '3', '4', '5', '6'
     };
 
-    ESP_LOGI(TAG, "Filling SPIFFS partition with dummy data");
-    part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY,
-            "spiffs_store");
-    esp_partition_erase_range(part, 0, part->size);
-    for(uint32_t i=0; i < part->size; i += sizeof(dummy_data))
-        esp_partition_write(part, i, dummy_data, sizeof(dummy_data));
-
-    ESP_LOGI(TAG, "Filling FAT partition with dummy data");
-    part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY,
-            "fat_store");
-    esp_partition_erase_range(part, 0, part->size);
-    for(uint32_t i=0; i < part->size; i += sizeof(dummy_data))
-        esp_partition_write(part, i, dummy_data, sizeof(dummy_data));
-
-    ESP_LOGI(TAG, "Filling LittleFS partition with dummy data");
+    ESP_LOGI(TAG, "Filling partition with dummy data");
     part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY,
             "flash_test");
     esp_partition_erase_range(part, 0, part->size);
@@ -234,18 +213,19 @@ TEST_CASE("Format", TAG){
     uint64_t t_fat, t_spiffs, t_littlefs, t_start;
 
     fill_partitions();
-
     t_start = esp_timer_get_time();
-    esp_spiffs_format(NULL);
+    esp_spiffs_format("flash_test");
     t_spiffs = esp_timer_get_time() - t_start;
     printf("SPIFFS Formatted in %lld us\n", t_spiffs);
 
+    fill_partitions();
     t_start = esp_timer_get_time();
     setup_fat();
     assert(ESP_OK == esp_vfs_fat_spiflash_unmount("/fat", s_wl_handle));
     t_fat = esp_timer_get_time() - t_start;
     printf("FAT Formatted in %lld us\n", t_fat);
 
+    fill_partitions();
     t_start = esp_timer_get_time();
     esp_littlefs_format("flash_test");
     t_littlefs = esp_timer_get_time() - t_start;
@@ -254,16 +234,18 @@ TEST_CASE("Format", TAG){
 }
 
 TEST_CASE("Write 5 files, read 5 files, then delete 5 files", TAG){
-    test_setup();
 
+    setup_fat();
     printf("FAT:\n");
     read_write_test_1("/fat", 5);
     printf("\n");
 
+    setup_spiffs();
     printf("SPIFFS:\n");
     read_write_test_1("/spiffs", 5);
     printf("\n");
 
+    setup_littlefs();
     printf("LittleFS:\n");
     read_write_test_1("/littlefs", 5);
     printf("\n");
