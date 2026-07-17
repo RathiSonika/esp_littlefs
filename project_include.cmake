@@ -62,17 +62,18 @@ function(littlefs_create_partition_image partition base_dir)
 			message(WARNING "Unsupported/unmaintained/deprecated ESP-IDF version ${IDF_VER}")
 		endif()
 
-		idf_component_get_property(main_args esptool_py FLASH_ARGS)
-		idf_component_get_property(sub_args esptool_py FLASH_SUB_ARGS)
-		esptool_py_flash_target(${partition}-flash "${main_args}" "${sub_args}")
-		esptool_py_flash_target_image(${partition}-flash "${partition}" "${offset}" "${image_file}")
-
-		add_dependencies(${partition}-flash littlefs_${partition}_bin)
+		# Use esp_partition_register_target so flash encryption auto-detects whether
+		# this partition needs encrypted flashing (same pattern as fatfs_create_*).
+		# Previously, esptool_py_flash_target_image() without ALWAYS_PLAINTEXT always
+		# host-encrypted storage.bin on encrypted-flash, even when the partition was
+		# not marked "encrypted", which made LittleFS files unreadable.
+		set(esp_partition_register_target_optional_args DEPENDS littlefs_${partition}_bin)
 
 		if(arg_FLASH_IN_PROJECT)
-			esptool_py_flash_target_image(flash "${partition}" "${offset}" "${image_file}")
-			add_dependencies(flash littlefs_${partition}_bin)
+			list(APPEND esp_partition_register_target_optional_args FLASH_IN_PROJECT)
 		endif()
+
+		esp_partition_register_target(${partition} "${image_file}" ${esp_partition_register_target_optional_args})
 
 	else()
 		set(message "Failed to create littlefs image for partition '${partition}'. "
